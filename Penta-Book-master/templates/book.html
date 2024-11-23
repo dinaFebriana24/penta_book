@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ book.book_name }} – Penta Book
+{% endblock %}
+
+{% block content %}
+    <div class="book-detail mt-5">
+        <h1>{{ book.book_name }}</h1>
+        <p><strong>Author:</strong> {{ book.author }}</p>
+        <p><strong>Description:</strong> {{ book.desc }}</p>
+        <p><strong>Price:</strong> {{ format_currency(book.price) }}</p>
+
+        {% if book.category_id %}
+        <p><strong>Category ID:</strong> {{ book.category_id }}</p>
+        {% endif %}
+
+        <!-- Add to Cart Form -->
+        <form action="{{ url_for('add_to_cart', book_id=book.book_id) }}" method="post">
+            <button type="submit" class="btn btn-success mt-3">Add to Cart</button>
+        </form>
+    </div>
+{% endblock %}
