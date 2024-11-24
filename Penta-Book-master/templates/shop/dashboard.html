@@ -1,0 +1,240 @@
+{% extends "shop/base_shop.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="welcome-section">
+    <h1>Selamat Datang, {{ shop_name }}!</h1>
+    <p class="text-muted">Kelola toko Anda dengan mudah</p>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- Total Buku -->
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="stats-icon bg-burgundy">
+                <i class="fas fa-book"></i>
+            </div>
+            <div class="stats-info">
+                <h3>250</h3>
+                <p>Total Buku</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rating Toko -->
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="stats-icon bg-burgundy-light">
+                <i class="fas fa-star"></i>
+            </div>
+            <div class="stats-info">
+                <h3>4.5</h3>
+                <p>Rating Toko</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Penjualan -->
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="stats-icon bg-burgundy">
+                <i class="fas fa-shopping-cart"></i>
+            </div>
+            <div class="stats-info">
+                <h3>150</h3>
+                <p>Total Penjualan</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pelanggan -->
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="stats-icon bg-burgundy-light">
+                <i class="fas fa-users"></i>
+            </div>
+            <div class="stats-info">
+                <h3>150+</h3>
+                <p>Pelanggan</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pesanan Terbaru -->
+<div class="card">
+    <div class="card-header bg-white">
+        <h5 class="card-title mb-0">Pesanan Terbaru</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Order ID</th>
+                        <th>Pembeli</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Tanggal</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>#1001</td>
+                        <td>John Doe</td>
+                        <td>Rp 250.000</td>
+                        <td><span class="badge bg-warning">Pending</span></td>
+                        <td>23/11/2024</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-burgundy">Detail</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>#1002</td>
+                        <td>Jane Smith</td>
+                        <td>Rp 180.000</td>
+                        <td><span class="badge bg-success">Completed</span></td>
+                        <td>23/11/2024</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-burgundy">Detail</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>#1003</td>
+                        <td>Mike Johnson</td>
+                        <td>Rp 300.000</td>
+                        <td><span class="badge bg-info">Processing</span></td>
+                        <td>22/11/2024</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-burgundy">Detail</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+    --burgundy: #8B2635;
+    --burgundy-light: #BC8F96;
+    --burgundy-lighter: #F2D9DC;
+    --cream: #FDF6F0;
+}
+
+.welcome-section {
+    margin-bottom: 2rem;
+}
+
+.welcome-section h1 {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #333;
+}
+
+.stats-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+
+.stats-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(139, 38, 53, 0.1);
+}
+
+.stats-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+
+.bg-burgundy {
+    background-color: var(--burgundy);
+}
+
+.bg-burgundy-light {
+    background-color: var(--burgundy-light);
+}
+
+.stats-info h3 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.stats-info p {
+    margin: 0;
+    color: #6c757d;
+}
+
+.card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card-header {
+    border-bottom: 1px solid #eee;
+    padding: 1rem 1.5rem;
+}
+
+.table {
+    margin-bottom: 0;
+}
+
+.table th {
+    border-top: none;
+    color: #6c757d;
+    font-weight: 500;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.badge {
+    padding: 0.5em 1em;
+    font-weight: 500;
+}
+
+.btn-outline-burgundy {
+    color: var(--burgundy);
+    border-color: var(--burgundy);
+}
+
+.btn-outline-burgundy:hover {
+    background-color: var(--burgundy);
+    color: white;
+}
+
+@media (max-width: 768px) {
+    .stats-card {
+        padding: 1rem;
+    }
+    
+    .stats-icon {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .stats-info h3 {
+        font-size: 1.25rem;
+    }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,652 @@
+from flask import Flask, render_template, request, redirect, url_for, g, flash, session
+import sqlite3
+import requests
+from werkzeug.security import generate_password_hash, check_password_hash
+from config import Config
+from forms import LoginForm, RegisterForm, ShopRegisterForm, BookForm
+import os
+from werkzeug.utils import secure_filename
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+app.config['UPLOAD_FOLDER'] = 'static/uploads'
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(app.config['DATABASE'])
+        g.db.row_factory = sqlite3.Row
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exception):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+
+
+def format_currency(value):
+    if value is None:
+        return "Rp0"  # Atau format default lainnya
+    return f'Rp{value:,.0f}'.replace(',', '.')
+
+@app.route('/shop/dashboard')
+def shop_dashboard():
+    if 'shop_id' not in session:
+        flash('You must be logged in as an admin to access this page.', 'danger')
+        return redirect(url_for('shop_login'))
+    return render_template('shop/dashboard.html')
+
+
+@app.route('/')
+def index():
+    template = 'customer/index.html'
+    if session.get('role') == 'buyer':
+        template = 'customer/buyer_index.html'
+    elif session.get('role') == 'shop':
+        template = 'shop/shop_index.html'
+    return render_template(template, books=[], format_currency=format_currency)
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        admin_name = form.username.data
+        password = form.password.data
+
+        db = get_db()
+        cur = db.execute('SELECT * FROM admin WHERE admin_name = ?', (admin_name,))
+        admin = cur.fetchone()
+
+        if admin and check_password_hash(admin['password'], password):
+            session['admin_id'] = admin['admin_id']
+            session['admin_name'] = admin['admin_name']
+            session['role'] = 'admin'
+            flash('Admin login successful!', 'success')
+            return redirect(url_for('admin_dashboard'))
+        else:
+            flash('Invalid admin name or password.', 'danger')
+
+    return render_template('admin/admin_login.html', form=form)
+
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    if 'admin_id' not in session:
+        flash('You must be logged in as an admin to access this page.', 'danger')
+        return redirect(url_for('admin_login'))
+
+    db = get_db()
+    buyers = db.execute('SELECT * FROM buyer').fetchall()
+    shops = db.execute('SELECT * FROM shop').fetchall()
+    return render_template('admin/admin_dashboard.html', buyers=buyers, shops=shops)
+
+
+@app.route('/admin/delete/<user_type>/<int:user_id>', methods=['POST'])
+def admin_delete(user_type, user_id):
+    if 'admin_id' not in session:
+        flash('You must be logged in as an admin to perform this action.', 'danger')
+        return redirect(url_for('admin_login'))
+
+    db = get_db()
+    if user_type == 'buyer':
+        db.execute('DELETE FROM buyer WHERE buyer_id = ?', (user_id,))
+    elif user_type == 'shop':
+        db.execute('DELETE FROM shop WHERE shop_id = ?', (user_id,))
+    else:
+        flash('Invalid user type.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    db.commit()
+    flash(f'{user_type.capitalize()} deleted successfully.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/buyer_index', methods=['Get'])
+def buyer_index():
+    db = get_db()
+    books = db.execute('SELECT * FROM books').fetchall()
+    return render_template('customer/buyer_index.html', books=books, format_currency=format_currency)
+
+@app.route('/shop/order', methods=['Get'])
+def shop_order():
+    
+    return render_template('shop/orders.html')
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    form = RegisterForm()
+    if form.validate_on_submit():
+        username = form.username.data
+        dob = form.dob.data
+        email = form.email.data
+        phone_number = form.phone_number.data
+        password = form.password.data
+        buyer_address = form.buyer_address.data
+
+        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+
+        try:
+            db = get_db()
+            db.execute('''INSERT INTO buyer (username, dob, email, phone_number, password, buyer_address) 
+                          VALUES (?, ?, ?, ?, ?, ?)''',
+                       (username, dob, email, phone_number, hashed_password, buyer_address))
+            db.commit()
+            flash('You have successfully registered! Please log in.', 'success')
+            return redirect(url_for('login'))
+        except sqlite3.IntegrityError:
+            flash('Username or email already exists.', 'danger')
+        except Exception as e:
+            flash(f'An error occurred: {e}', 'danger')
+
+    return render_template('customer/register.html', form=form)
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
+
+        db = get_db()
+        cur = db.execute('SELECT * FROM buyer WHERE username = ?', (username,))
+        user = cur.fetchone()
+
+        if user and check_password_hash(user['password'], password):
+            session['user_id'] = user['buyer_id']
+            session['username'] = user['username']
+            session['role'] = 'buyer'
+            flash('Login successful!', 'success')
+            return redirect(url_for('buyer_index'))
+        else:
+            flash('Invalid username or password.', 'danger')
+
+    return render_template('customer/login.html', form=form)
+
+
+@app.route('/shop/register', methods=['GET', 'POST'])
+def shop_register():
+    form = ShopRegisterForm()
+    if form.validate_on_submit():
+        shop_name = form.shop_name.data
+        owner_name = form.owner_name.data
+        shop_phone = form.shop_phone.data
+        password = form.password.data
+        shop_address = form.shop_address.data
+        shop_email = form.shop_email.data
+        shop_description = form.shop_description.data
+
+        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+
+        try:
+            db = get_db()
+            db.execute('''INSERT INTO shop (shop_name, owner_name, shop_phone, shop_address, shop_email, shop_description, password)
+                          VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                       (shop_name, owner_name, shop_phone, shop_address, shop_email, shop_description, hashed_password))
+            db.commit()
+            flash('Your shop has been successfully registered! Please log in.', 'success')
+            return redirect(url_for('shop_login'))
+        except sqlite3.IntegrityError:
+            flash('Shop name, email or phone number already exists.', 'danger')
+        except Exception as e:
+            flash(f'An error occurred: {e}', 'danger')
+
+    return render_template('shop/shop_register.html', form=form)
+
+
+@app.route('/shop/login', methods=['GET', 'POST'])
+def shop_login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        shop_name = form.username.data
+        password = form.password.data
+
+        db = get_db()
+        cur = db.execute('SELECT * FROM shop WHERE shop_name = ?', (shop_name,))
+        shop = cur.fetchone()
+
+        if shop and check_password_hash(shop['password'], password):
+            session['shop_id'] = shop['shop_id']
+            session['shop_name'] = shop['shop_name']
+            session['role'] = 'shop'
+            # if not is_shop_verified(shop['shop_id']):
+            #     session['verification_message'] = 'Your shop is not verified. Please contact admin.'
+            #     return redirect(url_for('logout'))
+            # flash('Login successful!', 'success')
+            return redirect(url_for('manage_books'))
+        else:
+            flash('Invalid shop name or password.', 'danger')
+
+    return render_template('shop/shop_login.html', form=form)
+
+@app.route('/admin/verify_shop/<int:shop_id>', methods=['POST'])
+def verify_shop(shop_id):
+    if 'admin_id' not in session:
+        flash('You must be logged in as an admin to perform this action.', 'danger')
+        return redirect(url_for('admin_login'))
+
+    db = get_db()
+    db.execute('UPDATE shop SET isverified = 1 WHERE shop_id = ?', (shop_id,))
+    db.commit()
+    flash('Shop verified successfully.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+def is_shop_verified(shop_id):
+    db = get_db()
+    cur = db.execute('SELECT isverified FROM shop WHERE shop_id = ?', (shop_id,))
+    shop = cur.fetchone()
+    return shop and shop['isverified'] == 1
+
+@app.route('/shop/profile', methods=['GET'])
+def profile():
+    if session.get('role') != 'shop':
+        flash('You need to be logged in as a shop to access this page.', 'warning')
+        return redirect(url_for('shop_login'))
+    
+    db = get_db()
+    shop_id = session.get('shop_id')
+
+    cur = db.execute('SELECT * FROM shop WHERE shop_id = ?', (shop_id,))
+    shop_data = cur.fetchone()
+
+    return render_template('shop/profile.html', shop_data=shop_data)
+
+@app.route('/shop/edit_profile/<int:shop_id>', methods=['GET', 'POST'])
+def edit_profile(shop_id):
+    if session.get('role') != 'shop':
+        flash('You need to be logged in as a shop to access this page.', 'warning')
+        return redirect(url_for('shop_login'))
+    
+    db = get_db()
+    form = ShopRegisterForm()
+    shop_id = session.get('shop_id')
+
+    # Fetch current shop data
+    shop_data = db.execute('SELECT * FROM shop WHERE shop_id = ?', (shop_id,)).fetchone()
+
+    if not shop_data:
+        flash('Shop data not found!', 'danger')
+        return redirect(url_for('profile'))
+
+    if request.method == 'GET':
+        # Populate form with current shop data
+        form.shop_name.data = shop_data['shop_name']
+        form.owner_name.data = shop_data['owner_name']
+        form.shop_phone.data = shop_data['shop_phone']
+        form.shop_address.data = shop_data['shop_address']
+        form.shop_email.data = shop_data['shop_email']
+        form.shop_description.data = shop_data['shop_description']
+
+    if form.validate_on_submit():
+        # Update shop data in the database
+        try:
+            db.execute('''
+                UPDATE shop
+                SET shop_name = ?, owner_name = ?, shop_phone = ?, shop_address = ?, shop_email = ?, shop_description = ?
+                WHERE shop_id = ?
+            ''', (
+                form.shop_name.data,
+                form.owner_name.data,
+                form.shop_phone.data,
+                form.shop_address.data,
+                form.shop_email.data,
+                form.shop_description.data,
+                shop_id,
+            ))
+            db.commit()
+            flash('Shop profile updated successfully!', 'success')
+            return redirect(url_for('profile'))
+        except Exception as e:
+            flash(f'An error occurred: {e}', 'danger')
+
+    return render_template('shop/edit_profile.html', form=form)
+
+
+@app.route('/logout')
+def logout():
+    verification_message = session.pop('verification_message', None)
+    session.clear()
+    if verification_message:
+        flash(verification_message, 'danger')
+    else:
+        flash('You have been logged out.', 'success')
+    return redirect(url_for('index'))
+
+
+@app.route('/book/<int:book_id>')
+def book(book_id):
+    try:
+        db = get_db()
+        cur = db.execute('SELECT * FROM books WHERE book_id = ?', (book_id,))
+        book = cur.fetchone()
+        return render_template('customer/book.html', book=book, format_currency=format_currency)
+    except Exception as e:
+        flash(f'An error occurred: {e}', 'danger')
+        return redirect(url_for('index'))
+
+
+@app.route('/add_to_cart/<int:book_id>', methods=['POST'])
+def add_to_cart(book_id):
+    if 'user_id' not in session:
+        flash('You need to be logged in to add items to the cart.', 'warning')
+        return redirect(url_for('login'))
+
+    try:
+        db = get_db()
+        cur = db.execute('SELECT * FROM books WHERE book_id = ?', (book_id,))
+        book = cur.fetchone()
+        if book:
+            cur = db.execute(
+                'SELECT * FROM cartitems WHERE cart_id = (SELECT cart_id FROM cart WHERE buyer_id = ?) AND book_id = ?',
+                (session['user_id'], book_id))
+            item = cur.fetchone()
+            if item:
+                db.execute('UPDATE cartitems SET quantity = quantity + 1 WHERE cart_item_id = ?',
+                           (item['cart_item_id'],))
+            else:
+                cart_cur = db.execute('SELECT cart_id FROM cart WHERE buyer_id = ?', (session['user_id'],))
+                cart_id = cart_cur.fetchone()
+                if not cart_id:
+                    db.execute('INSERT INTO cart (buyer_id, status) VALUES (?, ?)', (session['user_id'], 'open'))
+                    cart_id = db.execute('SELECT cart_id FROM cart WHERE buyer_id = ?',
+                                         (session['user_id'],)).fetchone()
+                db.execute('INSERT INTO cartitems (cart_id, book_id, quantity) VALUES (?, ?, ?)',
+                           (cart_id['cart_id'], book_id, 1))
+            db.commit()
+            flash('Book added to cart!', 'success')
+        return redirect(url_for('index'))
+    except Exception as e:
+        flash(f'An error occurred: {e}', 'danger')
+        return redirect(url_for('index'))
+
+
+@app.route('/shop_books', methods=['GET'])
+def shop_books():
+    query = request.args.get('query', '')
+    genre = request.args.get('genre', '')
+    price_min = request.args.get('price_min', 0)
+    price_max = request.args.get('price_max', float('inf'))
+    sort = request.args.get('sort', 'book_name')
+
+    db = get_db()
+    cursor = db.cursor()
+
+    sql_query = "SELECT * FROM books WHERE 1=1"
+    parameters = []
+
+    if query:
+        sql_query += " AND (book_name LIKE ? OR author LIKE ?)"
+        parameters.extend(['%' + query + '%', '%' + query + '%'])
+
+    if genre:
+        sql_query += " AND genre = ?"
+        parameters.append(genre)
+
+    sql_query += " AND price BETWEEN ? AND ?"
+    parameters.extend([price_min, price_max])
+
+    if sort == 'price_asc':
+        sql_query += " ORDER BY price ASC"
+    elif sort == 'price_desc':
+        sql_query += " ORDER BY price DESC"
+    else:
+        sql_query += f" ORDER BY {sort}"
+
+    cursor.execute(sql_query, parameters)
+    books = cursor.fetchall()
+
+    return render_template('shop/shop_books.html', books=books, format_currency=format_currency)
+
+
+@app.route('/cart')
+def cart():
+    if 'user_id' not in session:
+        flash('You need to be logged in to view your cart.', 'warning')
+        return redirect(url_for('login'))
+
+    try:
+        db = get_db()
+        cur = db.execute('''
+            SELECT b.book_id, b.book_name, b.author, IFNULL(b.price, 0) as price, ci.quantity
+            FROM cartitems ci
+            JOIN books b ON ci.book_id = b.book_id
+            JOIN cart c ON ci.cart_id = c.cart_id
+            WHERE c.buyer_id = ? AND c.status = "open"
+        ''', (session['user_id'],))
+        cart_items = cur.fetchall()
+        return render_template('customer/cart.html', cart_items=cart_items, format_currency=format_currency)
+    except Exception as e:
+        flash(f'An error occurred: {e}', 'danger')
+        return redirect(url_for('index'))
+
+
+
+@app.route('/checkout', methods=['GET', 'POST'])
+def checkout():
+    if 'user_id' not in session:
+        flash('You need to be logged in to checkout.', 'warning')
+        return redirect(url_for('login'))
+
+    try:
+        db = get_db()
+        user_id = session['user_id']
+
+        # Get the cart items
+        cur = db.execute('''
+            SELECT b.book_name, b.desc, b.price, c.quantity, b.book_id, sh.shop_id, sh.price as individual_price, 
+                            (c.quantity * b.price) as total_price, sh.shop_email, sh.shop_name, sh.owner_name
+            FROM cartitems c
+            JOIN books b ON c.book_id = b.book_id
+            JOIN shop sh ON sh.shop_id = b.shop_id
+            WHERE c.cart_id = (SELECT cart_id FROM cart WHERE buyer_id = ?)
+        ''', (user_id,))
+        cart_items = cur.fetchall()
+
+        if request.method == 'POST':
+            # Create a new order
+            total_price = sum(item['price'] * item['quantity'] for item in cart_items)
+            address = request.form.get('address')  # Collect delivery address
+            db.execute(
+                'INSERT INTO orders (cart_id, buyer_id, subtotal, total, status, delivery_address, order_date) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+                (cart_items[0][0] if cart_items else 0, user_id, total_price, total_price, 'initiated', address))
+            order_id = db.lastrowid
+
+            for item in cart_items:
+                db.execute(
+                    'INSERT INTO orderitems (order_id, book_id, shop_id, quantity, price, total_price) VALUES (?, ?, ?, ?, ?, ?)',
+                    (order_id, item['book_id'], item['shop_id'], item['quantity'], item['individual_price'],
+                     item['total_price']))
+
+            db.execute('UPDATE cart SET status = ? WHERE buyer_id = ?', ('complete', user_id))
+            db.commit()
+            flash('Your order has been placed.', 'success')
+            return redirect(url_for('index'))
+
+        total = sum(item['price'] * item['quantity'] for item in cart_items)
+        return render_template('customer/checkout.html', cart=cart_items, total=total, format_currency=format_currency)
+    except Exception as e:
+        flash(f'An error occurred: {e}', 'danger')
+        return redirect(url_for('index'))
+
+
+@app.route('/payment/<int:order_id>', methods=['GET', 'POST'])
+def payment(order_id):
+    if 'user_id' not in session:
+        flash('You need to be logged in to make a payment.', 'warning')
+        return redirect(url_for('login'))
+
+    db = get_db()
+    if request.method == 'POST':
+        method_id = request.form.get('method')
+        transaction_id = request.form.get('transaction_id')
+
+        # Fetch order details
+        order = db.execute('SELECT * FROM orders WHERE order_id = ?', (order_id,)).fetchone()
+
+        # Call mock payment gateway
+        payment_url = 'http://localhost:5001/process_payment'
+        data = {
+            "amount": order['total'],
+            "method_id": method_id,
+            "order_id": order_id
+        }
+
+        try:
+            response = requests.post(payment_url, json=data)
+            response_data = response.json()
+            if response.status_code == 200 and response_data['status'] == 'success':
+                transaction_id = response_data['data']['transaction_id']
+                payment_status = response_data['data']['payment_status']
+
+                # Insert payment details
+                db.execute(
+                    'INSERT INTO payments (method_id, order_id, transaction_id, payment_date, payment_status) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)',
+                    (method_id, order_id, transaction_id, payment_status))
+                db.execute('UPDATE orders SET status = ? WHERE order_id = ?', ('paid', order_id))
+                db.commit()
+                flash('Payment successful!', 'success')
+            else:
+                flash('Payment declined by the gateway.', 'danger')
+        except requests.ConnectionError:
+            flash('Failed to connect to the payment gateway.', 'danger')
+
+        return redirect(url_for('index'))
+
+    # Fetch available payment methods
+    methods = db.execute('SELECT * FROM paymentmethods').fetchall()
+    return render_template('customer/payment.html', methods=methods)
+
+@app.route('/shop/manage_books', methods=['GET', 'POST'])
+def manage_books():
+    if session.get('role') != 'shop':
+        flash('You need to be logged in as a shop to access this page.', 'warning')
+        return redirect(url_for('shop_login'))
+    
+    db = get_db()
+    shop_id = session.get('shop_id')
+
+    cur = db.execute('SELECT * FROM books WHERE shop_id = ?', (shop_id,))
+    books = cur.fetchall()
+
+    return render_template('shop/manage_books.html', books=books, format_currency=format_currency)
+
+
+@app.route('/shop/add_book', methods=['GET', 'POST'])
+def add_book():
+    if session.get('role') != 'shop':
+        flash('You need to be logged in as a shop to access this page.', 'warning')
+        return redirect(url_for('shop_login'))
+
+    form = BookForm()
+    db = get_db()
+
+    # Fetch categories for the category dropdown
+    categories = db.execute('SELECT * FROM categories').fetchall()
+    form.category_id.choices = [(c['category_id'], c['category_name']) for c in categories]
+
+    if form.validate_on_submit():
+        book_name = form.book_name.data
+        isbn = form.isbn.data
+        author = form.author.data
+        desc = form.desc.data
+        price = form.price.data
+        stock = form.stock.data
+        category_id = form.category_id.data
+        shop_id = session.get('shop_id')
+        image_file = save_image(form.image.data)
+
+        try:
+            db.execute('''
+                INSERT INTO books (category_id, shop_id, book_name, isbn, author, desc, price, stock, img_url) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (category_id, shop_id, book_name, isbn, author, desc, price, stock, image_file))
+            db.commit()
+            flash('Book added successfully!', 'success')
+            return redirect(url_for('manage_books'))
+        except Exception as e:
+            flash(f'An error occurred: {e}', 'danger')
+
+    return render_template('shop/add_book.html', form=form)
+
+
+def save_image(file):
+    if not file:
+        return None
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+    return filename
+
+
+@app.route('/shop/edit_book/<int:book_id>', methods=['GET', 'POST'])
+def edit_book(book_id):
+    if session.get('role') != 'shop':
+        flash('You need to be logged in as a shop to access this page.', 'warning')
+        return redirect(url_for('shop_login'))
+
+    db = get_db()
+    form = BookForm()
+
+    # Fetch categories for the category dropdown
+    categories = db.execute('SELECT * FROM categories').fetchall()
+    form.category_id.choices = [(c['category_id'], c['category_name']) for c in categories]
+
+    book = db.execute('SELECT * FROM books WHERE book_id = ? AND shop_id = ?', (book_id, session['shop_id'])).fetchone()
+    if not book:
+        flash('Book not found or you do not have permission to edit this book.', 'warning')
+        return redirect(url_for('manage_books'))
+
+    if form.validate_on_submit():
+        book_name = form.book_name.data
+        isbn = form.isbn.data
+        author = form.author.data
+        desc = form.desc.data
+        price = form.price.data
+        stock = form.stock.data
+        category_id = form.category_id.data
+        image_file = save_image(form.image.data)
+
+        try:
+            db.execute('''
+                UPDATE books 
+                SET category_id = ?, book_name = ?, isbn = ?, author = ?, desc = ?, price = ?, stock = ? 
+                WHERE book_id = ? AND shop_id = ?
+            ''', (category_id, book_name, isbn, author, desc, price, stock, book_id, session['shop_id']))
+            db.commit()
+            flash('Book updated successfully!', 'success')
+            return redirect(url_for('manage_books'))
+        except Exception as e:
+            flash(f'An error occurred: {e}', 'danger')
+
+    form.book_name.data = book['book_name']
+    form.isbn.data = book['isbn']
+    form.author.data = book['author']
+    form.desc.data = book['desc']
+    form.price.data = book['price']
+    form.stock.data = book['stock']
+    form.category_id.data = book['category_id']
+
+    return render_template('shop/edit_book.html', form=form)
+
+
+@app.route('/shop/delete_book/<int:book_id>', methods=['POST'])
+def delete_book(book_id):
+    if session.get('role') != 'shop':
+        flash('You need to be logged in as a shop to access this page.', 'warning')
+        return redirect(url_for('shop_login'))
+
+    db = get_db()
+    try:
+        db.execute('DELETE FROM books WHERE book_id = ? AND shop_id = ?', (book_id, session['shop_id']))
+        db.commit()
+        flash('Book deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'An error occurred: {e}', 'danger')
+
+    return redirect(url_for('manage_books'))
+
+
+if __name__ == '__main__':
+    app.run(debug=app.config['DEBUG'])
