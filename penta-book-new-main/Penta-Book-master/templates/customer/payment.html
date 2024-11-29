@@ -1,0 +1,24 @@
+{% extends "customer/base.html" %}
+
+{% block title %}
+    Payment - Penta Book
+{% endblock %}
+
+{% block content %}
+    <h1>Payment for Order #{{ order.order_id }}</h1>
+
+    <h2>Order Amount: {{ format_currency(order.total) }}</h2>
+
+    <form method="POST" action="{{ url_for('payment', order_id=order.order_id) }}">
+        <div class="form-group">
+            <label for="method">Payment Method</label>
+            <select id="method" name="method" class="form-control" required>
+                {% for method in methods %}
+                <option value="{{ method.method_id }}">{{ method.method_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Pay Now</button>
+    </form>
+{% endblock %}

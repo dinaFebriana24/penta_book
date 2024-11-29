@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Detail</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Order Detail</h1>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Buyer Name</th>
+                    <th>Book Name</th>
+                    <th>Quantity</th>
+                    <th>Price</th>
+                    <th>Total Price</th>
+                    <th>Order Total</th>
+                    <th>Order Date</th>
+                    <th>Delivery Address</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td>{{ order['order_id'] }}</td>
+                    <td>{{ order['buyer_name'] }}</td>
+                    <td>{{ order['book_name'] }}</td>
+                    <td>{{ order['quantity'] }}</td>
+                    <td>{{ order['price'] }}</td>
+                    <td>{{ order['total_price'] }}</td>
+                    <td>{{ order['total'] }}</td>
+                    <td>{{ order['order_date'] }}</td>
+                    <td>{{ order['delivery_address'] }}</td>
+                    <td>{{ order['status'] }}</td>
+                    <td> <form action="{{ url_for('create_shipment_route', order_id=order['order_id']) }}" method="POST">
+                        <button type="submit" class="btn btn-primary">Ship</button>
+                    </form></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+       
+        
+    </div>
+</body>
+</html>
